@@ -1,0 +1,163 @@
+name: cinebridge
+services:
+  cinebridge-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      PORT: 3000
+      HOST: 0.0.0.0
+      AMQP_URL: amqp://${RABBITMQ_USER:-cinebridge}:${RABBITMQ_PASSWORD:-cinebridge_dev}@cinebridge-mq:5672
+      DB_HOST: recomendacoes-db
+      RECOMENDACOES_DB: recomendacoes
+      POSTGRES_USER: ${POSTGRES_USER:-cinebridge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cinebridge_dev}
+      CINEBRIDGE_DECORATORS: ${CINEBRIDGE_DECORATORS:-cache,auditoria}
+    ports:
+      - "3000:3000"
+    depends_on:
+      recomendacoes-db:
+        condition: service_healthy
+      cinebridge-mq:
+        condition: service_healthy
+      cinebridge-profissionais:
+        condition: service_healthy
+      cinebridge-projetos:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  cinebridge-profissionais:
+    build:
+      context: .
+      dockerfile: Dockerfile.profissionais
+    environment:
+      PORT: 3001
+      AMQP_URL: amqp://${RABBITMQ_USER:-cinebridge}:${RABBITMQ_PASSWORD:-cinebridge_dev}@cinebridge-mq:5672
+      DB_HOST: profissionais-db
+      PROFISSIONAIS_DB: profissionais
+      POSTGRES_USER: ${POSTGRES_USER:-cinebridge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cinebridge_dev}
+    ports: ["3001:3001"]
+    depends_on:
+      profissionais-db: { condition: service_healthy }
+      cinebridge-mq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  cinebridge-projetos:
+    build:
+      context: .
+      dockerfile: Dockerfile.projetos
+    environment:
+      PORT: 3002
+      AMQP_URL: amqp://${RABBITMQ_USER:-cinebridge}:${RABBITMQ_PASSWORD:-cinebridge_dev}@cinebridge-mq:5672
+      DB_HOST: projetos-db
+      PROJETOS_DB: projetos
+      POSTGRES_USER: ${POSTGRES_USER:-cinebridge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cinebridge_dev}
+    ports: ["3002:3002"]
+    depends_on:
+      projetos-db: { condition: service_healthy }
+      cinebridge-mq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3002/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  cinebridge-notificacoes:
+    build:
+      context: .
+      dockerfile: Dockerfile.notificacoes
+    environment:
+      PORT: 3003
+      AMQP_URL: amqp://${RABBITMQ_USER:-cinebridge}:${RABBITMQ_PASSWORD:-cinebridge_dev}@cinebridge-mq:5672
+      DB_HOST: notificacoes-db
+      NOTIFICACOES_DB: notificacoes
+      POSTGRES_USER: ${POSTGRES_USER:-cinebridge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cinebridge_dev}
+    ports: ["3003:3003"]
+    depends_on:
+      notificacoes-db: { condition: service_healthy }
+      cinebridge-mq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3003/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  cinebridge-mq:
+    image: rabbitmq:3-management-alpine
+    hostname: cinebridge-mq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-cinebridge}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-cinebridge_dev}
+    ports: ["5672:5672", "15672:15672"]
+    volumes: ["rabbitmq_data:/var/lib/rabbitmq"]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  profissionais-db: &postgres
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cinebridge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cinebridge_dev}
+      POSTGRES_DB: profissionais
+    volumes: ["profissionais_data:/var/lib/postgresql/data"]
+    ports: ["5432:5432"]
+    healthcheck: &postgres-health
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  projetos-db:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cinebridge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cinebridge_dev}
+      POSTGRES_DB: projetos
+    volumes: ["projetos_data:/var/lib/postgresql/data"]
+    ports: ["5433:5432"]
+  notificacoes-db:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cinebridge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cinebridge_dev}
+      POSTGRES_DB: notificacoes
+    volumes: ["notificacoes_data:/var/lib/postgresql/data"]
+    ports: ["5435:5432"]
+  recomendacoes-db:
+    <<: *postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cinebridge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cinebridge_dev}
+      POSTGRES_DB: recomendacoes
+    volumes: ["recomendacoes_data:/var/lib/postgresql/data"]
+    ports: ["5434:5432"]
+
+networks:
+  default:
+    name: cinebridge-net
+    driver: bridge
+
+volumes:
+  rabbitmq_data:
+  profissionais_data:
+  projetos_data:
+  notificacoes_data:
+  recomendacoes_data:
